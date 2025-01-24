@@ -24,22 +24,37 @@ class VPCFlowLogAnalyzer:
     
     def _load_log_file(self):
         """
-        Load VPC flow log file into chunks
+        Load VPC flow log file into chunks with extended column support
         """
         try:
+            # Define all possible columns
+            columns = [
+                'version', 'account-id', 'interface-id', 
+                'srcaddr', 'dstaddr', 'srcport', 
+                'dstport', 'protocol', 'packets', 
+                'bytes', 'start', 'end', 'action', 
+                'log-status', 'vpc-id', 'subnet-id', 
+                'instance-id', 'tcp-flags', 'type', 
+                'region', 'az-id', 'reject-reason',
+                'flow-direction', 'traffic-path', 
+                'pkt-srcaddr', 'pkt-dstaddr', 
+                'pkt-src-aws-service', 'pkt-dst-aws-service',
+                'ecs-cluster-name', 'ecs-cluster-arn', 
+                'ecs-container-instance-id', 'ecs-container-instance-arn', 
+                'ecs-service-name', 'ecs-task-definition-arn', 
+                'ecs-task-id', 'ecs-task-arn', 
+                'ecs-container-id', 'ecs-second-container-id',
+                'sublocation-id', 'sublocation-type'
+            ]
+            
             # Use iterator to load file in chunks
             chunks = pd.read_csv(
                 self.log_file, 
                 sep=' ', 
                 header=None, 
-                names=[
-                    'version', 'account_id', 'interface_id', 
-                    'srcaddr', 'dstaddr', 'srcport', 
-                    'dstport', 'protocol', 'packets', 
-                    'bytes', 'start', 'end', 'action', 
-                    'log_status'
-                ],
-                chunksize=self.chunk_size
+                names=columns,
+                chunksize=self.chunk_size,
+                low_memory=False
             )
             
             # Concatenate chunks, but limit total memory usage
@@ -47,26 +62,79 @@ class VPCFlowLogAnalyzer:
             
             # Free up memory
             del chunks
+            
+            # Convert numeric columns
+            numeric_columns = ['srcport', 'dstport', 'packets', 'bytes', 'start', 'end']
+            for col in numeric_columns:
+                self.df[col] = pd.to_numeric(self.df[col], errors='coerce')
+        
         except Exception as e:
             self.console.print(f"[bold red]Error loading log file: {e}[/bold red]")
             self.df = pd.DataFrame()
     
     def summarize_traffic(self) -> Dict[str, Any]:
         """
-        Generate a summary of network traffic
+        Generate a comprehensive summary of network traffic
         
         :return: Dictionary with traffic summary metrics
         """
         if self.df is None or self.df.empty:
             return {}
         
-        return {
+        summary = {
             'total_connections': len(self.df),
             'unique_source_ips': self.df['srcaddr'].nunique(),
             'unique_destination_ips': self.df['dstaddr'].nunique(),
             'accepted_connections': len(self.df[self.df['action'] == 'ACCEPT']),
-            'rejected_connections': len(self.df[self.df['action'] == 'REJECT'])
+            'rejected_connections': len(self.df[self.df['action'] == 'REJECT']),
+            'total_bytes_transferred': self.df['bytes'].sum(),
+            'total_packets': self.df['packets'].sum(),
+            'unique_vpcs': self.df['vpc-id'].nunique(),
+            'unique_subnets': self.df['subnet-id'].nunique(),
+            'unique_regions': self.df['region'].nunique(),
+            'unique_availability_zones': self.df['az-id'].nunique()
         }
+        
+        # Analyze AWS services
+        summary['src_aws_services'] = self.df['pkt-src-aws-service'].value_counts().to_dict()
+        summary['dst_aws_services'] = self.df['pkt-dst-aws-service'].value_counts().to_dict()
+        
+        return summary
+    
+    def analyze_ecs_traffic(self) -> Dict[str, Any]:
+        """
+        Analyze ECS-specific network traffic
+        
+        :return: Dictionary with ECS traffic insights
+        """
+        if self.df is None or self.df.empty:
+            return {}
+        
+        # ECS Cluster Analysis
+        ecs_summary = {
+            'unique_clusters': self.df['ecs-cluster-name'].nunique(),
+            'unique_services': self.df['ecs-service-name'].nunique(),
+            'unique_tasks': self.df['ecs-task-id'].nunique(),
+            'unique_container_instances': self.df['ecs-container-instance-id'].nunique()
+        }
+        
+        # Top ECS Clusters by Traffic
+        ecs_summary['top_clusters'] = (
+            self.df.groupby('ecs-cluster-name')['bytes']
+            .sum()
+            .nlargest(5)
+            .to_dict()
+        )
+        
+        # Top ECS Services by Traffic
+        ecs_summary['top_services'] = (
+            self.df.groupby('ecs-service-name')['bytes']
+            .sum()
+            .nlargest(5)
+            .to_dict()
+        )
+        
+        return ecs_summary
     
     def generate_security_group_suggestions(self, max_suggestions: int = 10, top_n_connections: int = 100) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
         """
@@ -86,20 +154,24 @@ class VPCFlowLogAnalyzer:
         
         # Sort by connection count to get most significant connections
         ingress_grouped = (
-            accepted_connections.groupby(['interface_id', 'dstport', 'protocol', 'srcaddr'])
-            .size()
-            .reset_index(name='connection_count')
-            .sort_values('connection_count', ascending=False)
+            accepted_connections.groupby(['interface-id', 'dstport', 'protocol', 'srcaddr'])
+            .agg({
+                'bytes': 'sum',
+                'packets': 'sum'
+            })
+            .reset_index()
+            .sort_values('bytes', ascending=False)
             .head(top_n_connections)
         )
         
         # Track potential ingress security group rules per ENI
         for _, row in ingress_grouped.iterrows():
-            eni = row['interface_id']
+            eni = row['interface-id']
             port = row['dstport']
             protocol = row['protocol']
             src_ip = row['srcaddr']
-            connection_count = row['connection_count']
+            bytes_transferred = row['bytes']
+            packets_transferred = row['packets']
             
             protocol_details = self._get_protocol_details(str(protocol))
             
@@ -123,25 +195,30 @@ class VPCFlowLogAnalyzer:
                         'protocol_description': protocol_details['description'],
                         'common_uses': protocol_details['common_uses'],
                         'source_ip': src_ip,
-                        'connection_count': connection_count
+                        'bytes_transferred': bytes_transferred,
+                        'packets_transferred': packets_transferred
                     })
         
-        # Analyze egress connections similarly
+        # Similar analysis for egress rules
         egress_grouped = (
-            accepted_connections.groupby(['interface_id', 'srcport', 'protocol', 'dstaddr'])
-            .size()
-            .reset_index(name='connection_count')
-            .sort_values('connection_count', ascending=False)
+            accepted_connections.groupby(['interface-id', 'srcport', 'protocol', 'dstaddr'])
+            .agg({
+                'bytes': 'sum',
+                'packets': 'sum'
+            })
+            .reset_index()
+            .sort_values('bytes', ascending=False)
             .head(top_n_connections)
         )
         
         # Track potential egress security group rules per ENI
         for _, row in egress_grouped.iterrows():
-            eni = row['interface_id']
+            eni = row['interface-id']
             port = row['srcport']
             protocol = row['protocol']
             dst_ip = row['dstaddr']
-            connection_count = row['connection_count']
+            bytes_transferred = row['bytes']
+            packets_transferred = row['packets']
             
             protocol_details = self._get_protocol_details(str(protocol))
             
@@ -165,7 +242,8 @@ class VPCFlowLogAnalyzer:
                         'protocol_description': protocol_details['description'],
                         'common_uses': protocol_details['common_uses'],
                         'destination_ip': dst_ip,
-                        'connection_count': connection_count
+                        'bytes_transferred': bytes_transferred,
+                        'packets_transferred': packets_transferred
                     })
         
         return suggestions
@@ -211,23 +289,34 @@ class VPCFlowLogAnalyzer:
         
         :param top_n: Number of top ports to visualize
         """
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=(15, 10))
         
-        # Top source ports
-        plt.subplot(1, 2, 1)
-        self.df['srcport'].value_counts().head(top_n).plot(kind='bar')
-        plt.title(f'Top {top_n} Source Ports')
+        # Top source ports by bytes
+        plt.subplot(2, 2, 1)
+        self.df.groupby('srcport')['bytes'].sum().nlargest(top_n).plot(kind='bar')
+        plt.title(f'Top {top_n} Source Ports by Bytes')
         plt.xlabel('Port')
-        plt.ylabel('Connection Count')
+        plt.ylabel('Total Bytes')
         plt.xticks(rotation=45)
         
-        # Top destination ports
-        plt.subplot(1, 2, 2)
-        self.df['dstport'].value_counts().head(top_n).plot(kind='bar')
-        plt.title(f'Top {top_n} Destination Ports')
+        # Top destination ports by bytes
+        plt.subplot(2, 2, 2)
+        self.df.groupby('dstport')['bytes'].sum().nlargest(top_n).plot(kind='bar')
+        plt.title(f'Top {top_n} Destination Ports by Bytes')
         plt.xlabel('Port')
-        plt.ylabel('Connection Count')
+        plt.ylabel('Total Bytes')
         plt.xticks(rotation=45)
+        
+        # Traffic by AWS Services
+        plt.subplot(2, 2, 3)
+        service_traffic = self.df.groupby('pkt-src-aws-service')['bytes'].sum().nlargest(top_n)
+        service_traffic.plot(kind='pie', autopct='%1.1f%%')
+        plt.title('Source AWS Service Traffic')
+        
+        plt.subplot(2, 2, 4)
+        service_traffic = self.df.groupby('pkt-dst-aws-service')['bytes'].sum().nlargest(top_n)
+        service_traffic.plot(kind='pie', autopct='%1.1f%%')
+        plt.title('Destination AWS Service Traffic')
         
         plt.tight_layout()
         plt.savefig('vpc_traffic_analysis.png')
@@ -235,67 +324,46 @@ class VPCFlowLogAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(description='AWS VPC Flow Log Analyzer')
-    parser.add_argument('log_file', help='Path to VPC flow log file')
+    parser.add_argument('log_file', help='Path to the VPC flow log file')
     args = parser.parse_args()
     
     console = Console()
     
-    console.print(Panel.fit(
-        "[bold cyan]AWS VPC Flow Log Analyzer[/bold cyan]\n"
-        "Parsing and analyzing network traffic logs"
-    ))
-    
-    analyzer = VPCFlowLogAnalyzer(args.log_file)
-    
-    # Display traffic summary
-    traffic_summary = analyzer.summarize_traffic()
-    if traffic_summary:
-        table = Table(title="VPC Flow Log Traffic Summary")
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="magenta")
+    try:
+        analyzer = VPCFlowLogAnalyzer(args.log_file)
         
-        table.add_row("Total Connections", str(traffic_summary['total_connections']))
-        table.add_row("Unique Source IPs", str(traffic_summary['unique_source_ips']))
-        table.add_row("Unique Destination IPs", str(traffic_summary['unique_destination_ips']))
-        table.add_row("Accepted Connections", str(traffic_summary['accepted_connections']))
-        table.add_row("Rejected Connections", str(traffic_summary['rejected_connections']))
+        # Display traffic summary
+        traffic_summary = analyzer.summarize_traffic()
+        if traffic_summary:
+            table = Table(title="VPC Flow Log Traffic Summary")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="magenta")
+            
+            for metric, value in traffic_summary.items():
+                table.add_row(str(metric).replace('_', ' ').title(), str(value))
+            
+            console.print(table)
         
-        console.print(table)
+        # ECS Traffic Analysis
+        ecs_summary = analyzer.analyze_ecs_traffic()
+        if ecs_summary:
+            ecs_table = Table(title="ECS Traffic Summary")
+            ecs_table.add_column("Metric", style="cyan")
+            ecs_table.add_column("Value", style="magenta")
+            
+            for metric, value in ecs_summary.items():
+                ecs_table.add_row(str(metric).replace('_', ' ').title(), str(value))
+            
+            console.print(ecs_table)
+        
+        # Generate security group suggestions
+        security_suggestions = analyzer.generate_security_group_suggestions()
+        
+        # Visualize traffic
+        analyzer.visualize_traffic()
     
-    # Generate security group suggestions
-    security_suggestions = analyzer.generate_security_group_suggestions()
-    
-    # Display security group suggestions
-    console.print("\n[bold green]Security Group Rule Suggestions:[/bold green]")
-    
-    # Ingress Rules
-    for eni, rules in security_suggestions['ingress_rules'].items():
-        console.print(f"\n[bold]ENI {eni} Ingress Rules:[/bold]")
-        for i, rule in enumerate(rules, 1):
-            console.print(f"\nRule {i}:")
-            console.print(f"  [cyan]Port:[/cyan] {rule['port']}")
-            console.print(f"  [cyan]Protocol Number:[/cyan] {rule['protocol_number']}")
-            console.print(f"  [cyan]Protocol Name:[/cyan] {rule['protocol_name']}")
-            console.print(f"  [cyan]Protocol Description:[/cyan] {rule['protocol_description']}")
-            console.print(f"  [cyan]Common Uses:[/cyan] {', '.join(rule['common_uses'])}")
-            console.print(f"  [cyan]Source IP:[/cyan] {rule['source_ip']}")
-            console.print(f"  [cyan]Connection Count:[/cyan] {rule['connection_count']}")
-    
-    # Egress Rules
-    for eni, rules in security_suggestions['egress_rules'].items():
-        console.print(f"\n[bold]ENI {eni} Egress Rules:[/bold]")
-        for i, rule in enumerate(rules, 1):
-            console.print(f"\nRule {i}:")
-            console.print(f"  [cyan]Port:[/cyan] {rule['port']}")
-            console.print(f"  [cyan]Protocol Number:[/cyan] {rule['protocol_number']}")
-            console.print(f"  [cyan]Protocol Name:[/cyan] {rule['protocol_name']}")
-            console.print(f"  [cyan]Protocol Description:[/cyan] {rule['protocol_description']}")
-            console.print(f"  [cyan]Common Uses:[/cyan] {', '.join(rule['common_uses'])}")
-            console.print(f"  [cyan]Destination IP:[/cyan] {rule['destination_ip']}")
-            console.print(f"  [cyan]Connection Count:[/cyan] {rule['connection_count']}")
-    
-    # Create traffic visualizations
-    analyzer.visualize_traffic()
+    except Exception as e:
+        console.print(f"[bold red]Error analyzing log file: {e}[/bold red]")
 
 if __name__ == '__main__':
     main()
