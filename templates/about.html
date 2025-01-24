@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-lg">
+            <div class="card-header bg-primary text-white">
+                <h2 class="text-center">About VPC Flow Log Analyzer</h2>
+            </div>
+            <div class="card-body">
+                <h3>What is VPC Flow Log Analyzer?</h3>
+                <p>A powerful tool designed to help you understand and analyze AWS VPC Flow Logs. It provides insights into network traffic, security group suggestions, and visualizations.</p>
+                
+                <h3>Key Features</h3>
+                <ul>
+                    <li>Detailed traffic summary</li>
+                    <li>Per-ENI security group rule suggestions</li>
+                    <li>Interactive traffic visualization</li>
+                    <li>Protocol and connection insights</li>
+                </ul>
+                
+                <h3>How It Works</h3>
+                <ol>
+                    <li>Export VPC Flow Logs from AWS Console</li>
+                    <li>Upload the log file to the analyzer</li>
+                    <li>Get comprehensive network traffic analysis</li>
+                </ol>
+                
+                <h3>Technologies Used</h3>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title">Backend</h5>
+                                <p>Python, Flask, Pandas</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title">Frontend</h5>
+                                <p>Bootstrap, Plotly</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title">Visualization</h5>
+                                <p>Interactive Charts</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

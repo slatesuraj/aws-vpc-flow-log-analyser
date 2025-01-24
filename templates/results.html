@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h2 class="text-center">VPC Flow Log Analysis Results</h2>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h3>Traffic Summary</h3>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Total Connections</td>
+                                    <td>{{ summary.total_connections }}</td>
+                                </tr>
+                                <tr>
+                                    <td>Unique Source IPs</td>
+                                    <td>{{ summary.unique_source_ips }}</td>
+                                </tr>
+                                <tr>
+                                    <td>Unique Destination IPs</td>
+                                    <td>{{ summary.unique_destination_ips }}</td>
+                                </tr>
+                                <tr>
+                                    <td>Accepted Connections</td>
+                                    <td>{{ summary.accepted_connections }}</td>
+                                </tr>
+                                <tr>
+                                    <td>Rejected Connections</td>
+                                    <td>{{ summary.rejected_connections }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h3>Traffic Visualization</h3>
+                        <div id="trafficPlot"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h3>Security Group Suggestions</h3>
+            </div>
+            <div class="card-body">
+                <div class="accordion" id="securitySuggestionsAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="ingressHeader">
+                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#ingressRules">
+                                Ingress Rules
+                            </button>
+                        </h2>
+                        <div id="ingressRules" class="accordion-collapse collapse show">
+                            <div class="accordion-body">
+                                {% for eni, rules in security_suggestions.ingress_rules.items() %}
+                                <div class="card mb-3">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        ENI: {{ eni }}
+                                        <span class="badge bg-primary rounded-pill">{{ rules|length }} Rules</span>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-hover mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Port</th>
+                                                        <th>Protocol</th>
+                                                        <th>Source IP</th>
+                                                        <th>Connections</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for rule in rules %}
+                                                    <tr data-bs-toggle="tooltip" title="{{ rule.protocol_description }}">
+                                                        <td>{{ rule.port }}</td>
+                                                        <td>{{ rule.protocol_name }}</td>
+                                                        <td>{{ rule.source_ip }}</td>
+                                                        <td>{{ rule.connection_count }}</td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="egressHeader">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#egressRules">
+                                Egress Rules
+                            </button>
+                        </h2>
+                        <div id="egressRules" class="accordion-collapse collapse">
+                            <div class="accordion-body">
+                                {% for eni, rules in security_suggestions.egress_rules.items() %}
+                                <div class="card mb-3">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        ENI: {{ eni }}
+                                        <span class="badge bg-primary rounded-pill">{{ rules|length }} Rules</span>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-hover mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Port</th>
+                                                        <th>Protocol</th>
+                                                        <th>Destination IP</th>
+                                                        <th>Connections</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {% for rule in rules %}
+                                                    <tr data-bs-toggle="tooltip" title="{{ rule.protocol_description }}">
+                                                        <td>{{ rule.port }}</td>
+                                                        <td>{{ rule.protocol_name }}</td>
+                                                        <td>{{ rule.destination_ip }}</td>
+                                                        <td>{{ rule.connection_count }}</td>
+                                                    </tr>
+                                                    {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    var trafficPlotData = {{ traffic_plot|safe }};
+    Plotly.newPlot('trafficPlot', trafficPlotData.data, trafficPlotData.layout);
+
+    // Enable tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    })
+</script>
+{% endblock %}

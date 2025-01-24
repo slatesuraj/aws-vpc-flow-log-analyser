@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow-lg border-danger">
+            <div class="card-header bg-danger text-white">
+                <h2 class="text-center">Rate Limit Exceeded</h2>
+            </div>
+            <div class="card-body text-center">
+                <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i>
+                <h3 class="mt-3">Too Many Requests</h3>
+                <p>You've exceeded the maximum number of requests. Please wait a moment and try again.</p>
+                <ul class="list-unstyled">
+                    <li>Daily Limit: 100 requests</li>
+                    <li>Hourly Limit: 30 requests</li>
+                    <li>Per Minute Limit: 10 requests</li>
+                </ul>
+                <a href="/" class="btn btn-primary mt-3">
+                    <i class="bi bi-arrow-left"></i> Return to Home
+                </a>
+            </div>
+            <div class="card-footer text-muted">
+                These limits help protect our service and ensure fair usage for all users.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

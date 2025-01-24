@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="card shadow-lg">
+            <div class="card-header bg-primary text-white">
+                <h2 class="text-center">Upload VPC Flow Log</h2>
+            </div>
+            <div class="card-body">
+                {% if error %}
+                <div class="alert alert-danger">{{ error }}</div>
+                {% endif %}
+                
+                <form action="/" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="fileUpload" class="form-label">Select VPC Flow Log File</label>
+                        <input class="form-control" type="file" id="fileUpload" name="file" accept=".txt,.log">
+                        <div class="form-text">Supported formats: .txt, .log (Max 50 MB)</div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-cloud-upload"></i> Upload and Analyze
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer text-muted text-center">
+                Analyze your AWS VPC Flow Logs with ease
+            </div>
+        </div>
+        
+        <div class="mt-4 text-center">
+            <h3>How to Use</h3>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">1. Prepare Log</h5>
+                            <p>Export VPC Flow Logs from AWS Console</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">2. Upload File</h5>
+                            <p>Select and upload your log file</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">3. Analyze Results</h5>
+                            <p>View detailed network insights</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
